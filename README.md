@@ -1,20 +1,10 @@
 ![logo](https://github.com/Botspot/pi-apps/blob/master/icons/proglogo.png?raw=true)
 ## Raspberry Pi App Store for Open Source Projects
 
-Linux is harder to master than Windows. It's geared toward power users, and you will encounter problems if you follow tutorials.
-Because of the lack of available software on the `apt` repositories, most Raspberry Pi owners never use their Pis to their full, desktop PC, potential.  
-Countless **Raspberry Pis remain in disuse** for this very reason. Something must be done!  
-Introducing **Pi-Apps**, basically a list of pre-made apps you can install with **one click**.  
-
-**[ETA Prime](https://www.youtube.com/watch?v=oqNWJ52DLes)** (a very well known RPi YouTuber) says:
-
-> "It's an **awesome** Raspberry Pi app store and it **works really well** and there's *lots* of **great stuff in here** and it's super **easy to install**.  
-> I want to give the devs of Pi-Apps a big shout-out."
-
 ## To install Pi-Apps
-Compatible operating systems: **Raspberry Pi OS** and most other Debian-based ARM operating systems like Twister OS, MX Linux, Kali Linux, and Ubuntu.
+Pi-Apps x86 SUpports AMD64 And i386
 ```
-wget -qO- https://raw.githubusercontent.com/Botspot/pi-apps/master/install | bash
+wget -qO- https://raw.githubusercontent.com/MCRaspRBX/pi-apps-x86/master/install | bash
 ```
 The install script ensures [YAD](https://github.com/v1cont/yad) is installed, creates two menu buttons, an auto-started updater, and a file (`/usr/local/bin/pi-apps`) that allows pi-apps to be run from terminal. Besides those, nothing is modified outside of the Pi-Apps folder.
 
@@ -23,8 +13,8 @@ The install script ensures [YAD](https://github.com/v1cont/yad) is installed, cr
 To manually install Pi-Apps:
  
 ```
-git clone https://github.com/Botspot/pi-apps
-~/pi-apps/install
+git clone https://github.com/MCRaspRBX/pi-apps-x86
+~/pi-apps-x86/install
 ```
 </details>
 
@@ -33,40 +23,9 @@ git clone https://github.com/Botspot/pi-apps
 To uninstall Pi-Apps:
 
 ```
-~/pi-apps/uninstall
+~/pi-apps-x86/uninstall
 ```
 </details>
-
-## To run Pi-Apps
-Menu -> Accessories -> Pi Apps, or run `pi-apps` in a terminal. Run Pi-Apps from its directory with `~/pi-apps/gui`.
-### Useful links
-- [![Pi-Apps Discord server](https://img.shields.io/discord/770629697909424159.svg?color=7289da&label=Pi-Apps%20Discord%20server&logo=discord)](https://discord.gg/RXSTvaUvuu)
-- [Send Botspot a donation](https://paypal.me/josephmarchand)
-- [View changelog](https://github.com/Botspot/pi-apps/blob/master/CHANGELOG.md)
-- [Report an error](https://github.com/Botspot/pi-apps/issues/new)
-- [Leepspvideo Pi-Apps walkthrough](https://www.youtube.com/watch?v=zxyWQ3FV98I)
-- [ETA Prime's Pi-Apps & Minecraft Java video](https://www.youtube.com/watch?v=oqNWJ52DLes)
-
-## What do others say about Pi-Apps?
-> "Awesome. Thanks for doing this." - **[Novaspirit Tech](https://www.youtube.com/novaspirittech)** (large RPi YouTuber) on Discord
-
-> Thanks so much to Botspot for creating this; it's a great program." - **[leepspvideo](https://www.youtube.com/watch?v=zxyWQ3FV98I)** (large RPi YouTuber)
-
-> "I love pi-apps. It's great and installs tons of useful software that people don't know how to install. Great work Botspot!" - **[RPi Projects and More](https://www.youtube.com/channel/UCkv0fW0EIUTKw6pYEnTjTbQ)** (RPi YouTuber)
-
-> "I gave Pi-Apps a go a while back and have suggested it to others quite a few times.
-> We can't provide all the options people may want, so it helps a lot that there are people like you who can help bridge the gap. Thank you Botspot!" - RPi developer in an email
-
-> "Thanks for the great work making it all simple for everybody." - [**ShiftPlusOne**](https://www.raspberrypi.org/forums/viewtopic.php?f=63&t=290329&p=1755860#p1755857) (RPi moderator) on the RPi forums
-
-> "Good luck with your projects, Botspot, you're really making waves!" - **[Sakaki](https://github.com/sakaki-)** (RPi legend) in an email
-
-> "I ❤️ Pi-Apps cuz it is totally awesome! I pranked a lot of people with MacOS theme and Win10 theme!" - LEHAtupointow on Discord
-
-<hr>
-
-# Read [the wiki](https://github.com/Botspot/pi-apps/wiki)  for the full documentation
-
 ### Basic usage
 - This is the **main window**:  
 ![main window](https://github.com/Botspot/pi-apps/blob/master/icons/screenshots/main%20window.png?raw=true)  
