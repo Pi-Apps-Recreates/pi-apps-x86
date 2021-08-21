@@ -32,7 +32,7 @@ To uninstall Pi-Apps:
 > I made this x86 version so people from Rasberry Pi's have a familer appstore 
 
  - Is Pi-Apps x86 still under development?
-> Sure is! Initial development is done for the most part, and I don't see any more [major features](https://github.com/Botspot/pi-apps#to-do) being added to Pi-Apps's core functionality. (besides maybe allowing `apt`-package apps in the future)
+> Sure is! Initial development is done for the most part, and I don't see any more major features being added to Pi-Apps's core functionality.
 > But, there's always an app or two that need attention, and dozens of app requests. It's enough work to keep a *team* of developers busy.
 
  - Is Pi-Apps x86 free?
