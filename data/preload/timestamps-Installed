@@ -1,0 +1,10 @@
+prefix: Installed
+format: yad
+number of files: 208
+preload shasum: c93ffcc2deac9cfa90a8ef4996659f97dea54fa0b76f1fb233aeb7374422d564
+api shasum: 3ec9a1fe93121c413576d76a8dad17b548f0c32313cf9556d5e139e176eec1d4
+structure shasum: af3482f0597c21059f523cca1ed32a8ac3a60722
+dir /home/raspberryrbx/pi-apps/apps 1629515958
+dir /home/raspberryrbx/pi-apps/data/settings 1629505021
+dir /home/raspberryrbx/pi-apps/data/status 1629505716
+dir /home/raspberryrbx/pi-apps/etc 1629504039
