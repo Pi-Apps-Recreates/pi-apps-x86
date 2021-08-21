@@ -1,8 +1,8 @@
 ![logo](https://raw.githubusercontent.com/MCRaspRBX/pi-apps-x86/logo/Pi-Apps_X86-removebg-preview.png?raw=true)
-## Raspberry Pi App Store for Open Source Projects
+## A Debian/Ubuntu Based Appstore For Raspberry Pi People Have A Familer Appstore
 
 ## To install Pi-Apps
-Pi-Apps x86 SUpports AMD64 And i386
+Pi-Apps x86 Supports AMD64 And i386
 ```
 wget -qO- https://raw.githubusercontent.com/MCRaspRBX/pi-apps-x86/main/install | bash
 ```
