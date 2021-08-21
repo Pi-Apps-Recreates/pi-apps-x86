@@ -1,4 +1,4 @@
-![logo](https://github.com/Botspot/pi-apps/blob/master/icons/proglogo.png?raw=true)
+![logo](https://raw.githubusercontent.com/MCRaspRBX/pi-apps-x86/logo/Pi-Apps_X86-removebg-preview.png?raw=true)
 ## Raspberry Pi App Store for Open Source Projects
 
 ## To install Pi-Apps
