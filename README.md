@@ -4,7 +4,7 @@
 ## To install Pi-Apps
 Pi-Apps x86 SUpports AMD64 And i386
 ```
-wget -qO- https://raw.githubusercontent.com/MCRaspRBX/pi-apps-x86/master/install | bash
+wget -qO- https://raw.githubusercontent.com/MCRaspRBX/pi-apps-x86/main/install | bash
 ```
 The install script ensures [YAD](https://github.com/v1cont/yad) is installed, creates two menu buttons, an auto-started updater, and a file (`/usr/local/bin/pi-apps`) that allows pi-apps to be run from terminal. Besides those, nothing is modified outside of the Pi-Apps folder.
 
