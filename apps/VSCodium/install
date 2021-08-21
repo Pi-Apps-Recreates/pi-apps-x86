@@ -1,0 +1,12 @@
+#!/bin/bash
+
+DIRECTORY="$(dirname "$(dirname "$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )")")"
+
+function error {
+  echo -e "\\e[91m$1\\e[39m"
+  exit 1
+}
+
+curl -s  https://api.github.com/repos/VSCodium/vscodium/releases/latest | grep browser_download_url  | cut -d '"' -f 4 | grep 'amd64.deb' | wget -i -
+sudo dpkg -i codium*amd64.deb
+codium
