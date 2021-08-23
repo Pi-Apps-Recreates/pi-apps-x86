@@ -1,8 +1,8 @@
 ![logo](https://raw.githubusercontent.com/MCRaspRBX/pi-apps-x86/logo/Pi-Apps_X86-removebg-preview.png?raw=true)
-## A Debian/Ubuntu Based Appstore For Raspberry Pi People Have A Familer Appstore
+## A port of the [pi-apps](https://github.com/Botspot/pi-apps) appstore to x86 PCs
 
-## To install Pi-Apps x86
-Pi-Apps x86 Supports AMD64 And i386
+## Install
+Pi-Apps x86 Supports amd64 And i386 architectures (but not armhf and aarch64, because that would defeat the purpose)
 ```
 wget -qO- https://raw.githubusercontent.com/MCRaspRBX/pi-apps-x86/main/install | bash
 ```
@@ -29,7 +29,7 @@ To uninstall Pi-Apps:
 
 ### Q&A with MCRaspRBX
  - Why did you develop Pi-Apps x86?  
-> I made this x86 version so people from Rasberry Pi's have a familer appstore 
+> I made this x86 version so people coming from Rasberry Pi's can easily install their favourite apps with a familiar GUI, instead of needing to learn how to use things like the GNOME appstore
 
  - Is Pi-Apps x86 still under development?
 > Sure is! Initial development is done for the most part, and I don't see any more major features being added to Pi-Apps's core functionality.
