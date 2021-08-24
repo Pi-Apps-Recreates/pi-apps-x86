@@ -7,9 +7,5 @@ function error {
   exit 1
 }
 
-#if your app installs any packages, keep this command here so those packages will be removed.
-"${DIRECTORY}/purge-installed" "$(dirname "$0")" || exit 1
-
-sudo apt purge -y steam
-sudo rm -rf /usr/bin/steam ~/.steam ~/.local/share/Steam /usr/lib/steam /usr/share/applications/steam.desktop /usr/share/doc/steam ~/Desktop/steam.desktop
+sudo apt purge -y steam 
 exit 0
