@@ -123,6 +123,14 @@ fi
 "${DIRECTORY}/preload" &>/dev/null
 
 sudo chmod +x ~/pi-apps-x86/uninstall
+sudo chmod +x ~/pi-apps-x86/gui
+sudo chmod +x ~/pi-apps-x86/createapp
+sudo chmod +x ~/pi-apps-x86/manage
+sudo chmod +x ~/pi-apps-x86/pkg-install
+sudo chmod +x ~/pi-apps-x86/preload
+sudo chmod +x ~/pi-apps-x86/purge-installed
+sudo chmod +x ~/pi-apps-x86/settings
+sudo chmod +x ~/pi-apps-x86/updater
 
 echo "Installation complete."
 
