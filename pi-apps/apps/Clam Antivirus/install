@@ -1,0 +1,13 @@
+#!/bin/bash
+
+#ClamAV install script by RPN News
+
+#Define error function
+DIRECTORY="$(dirname "$(dirname "$(dirname "$0")")")"
+function error {
+  echo -e "\\e[31m$1\\e[39m"
+  exit 1
+}
+
+sudo apt install clamav && sudo apt install clamtk
+exit 0

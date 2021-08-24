@@ -1,0 +1,279 @@
+#!/bin/bash
+
+set -o pipefail #if any command within a pipe fails, make the whole pipe fail. Necessary for error-catching with reduceapt
+DIRECTORY="$(readlink -f "$(dirname "$0")")"
+trap "exit 1" TERM
+export TOP_PID=$$
+
+error() {
+  echo -e "\e[91m$1\e[39m" 1>&2
+  kill -w -s TERM $TOP_PID
+  exit 1
+}
+
+#$1 is a quotation-marked, space-seperated list of package names.
+#$2 is the path to the program folder being installed.
+#Example usage: ~/pi-apps/pkg-install "gparted buffer expect" Arduino
+
+PKG_LIST="$1" #quotation-marked, space-seperated list of package names to install
+app="$(basename "$2")" #remove any slashes to just get program name
+
+reduceapt() { #remove unwanted lines from apt output
+  grep -v "apt does not have a stable CLI interface.\|Reading package lists...\|Building dependency tree\|Reading state information...\|Need to get\|After this operation,\|Get:\|Fetched\|Selecting previously unselected package\|Preparing to unpack\|Unpacking \|Setting up \|Processing triggers for "
+}
+
+message_to_user() { #bright, attention-getting message to display to user
+  echo -e "\e[93m
+▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+$1
+▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+\e[39m"
+}
+
+apt_diagnose() { #Explain stdin-inputted apt errors to user and list ways to fix them
+  errors="$(cat /dev/stdin)"
+  
+  #check for 'E: The repository'
+  if echo "$errors" | grep -q 'E: The repository' || echo "$errors" | grep -q 'sources.list entry misspelt' ;then
+    message_to_user "APT reported a faulty repository, and you must fix it before Pi-Apps will work.
+
+To delete the repository:
+Remove the relevant line from /etc/apt/sources.list file or delete the file in
+the /etc/apt/sources.list.d folder.
+
+sources.list requires root permissions to edit: sudo mousepad /path/to/file"
+  fi
+  
+  #check for 'NO_PUBKEY'
+  if echo "$errors" | grep -q 'NO_PUBKEY';then
+    echo -en "\e[93m
+▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+APT reported an unsigned repository. This script will try to repair it.
+Waiting 10 seconds... Press Ctrl+C to cancel.\e[39m"
+    sleep 10
+    echo -e '\n\e[93mAttempting to sign unsigned repositories...\e[39m'
+    sudo -E apt update 2>&1 1>/dev/null | sed -ne 's/.*NO_PUBKEY //p' | while read key; do if ! [[ ${keys[*]} =~ "$key" ]]; then sudo -E apt-key adv --keyserver hkp://pool.sks-keyservers.net:80 --recv-keys "$key"; keys+=("$key"); fi; done
+    if [ $? == 0 ];then
+      echo -e '\e[93mDone. Please try installing the same app again.\e[39m'
+    else
+      echo -e '\e[93mAutomatic repository signing failed. You must repair the faulty repository yourself.\e[39m'
+    fi
+    echo -e "\e[93m▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲\n\e[39m"
+  fi
+  
+  # check for 'Could not resolve' or 'Failed to fetch'
+  if echo "$errors" | grep -q 'Could not resolve' || echo "$errors" | grep -q 'Failed to fetch' || echo "$errors" | grep -q 'Temporary failure resolving' || echo "$errors" | grep -q 'Network is unreachable';then
+    message_to_user "APT reported an unresolvable repository.
+
+Please check your Internet connection and try again."
+  fi
+  
+  #check for 'is configured multiple times in'
+  if echo "$errors" | grep -q 'is configured multiple times in';then
+    message_to_user "APT reported a double-configured repository, and you must fix it to fix Pi-Apps.
+
+To delete the repository:
+Remove the relevant line from /etc/apt/sources.list file or delete the file in
+the /etc/apt/sources.list.d folder.
+
+sources.list requires root permissions to edit: sudo mousepad /path/to/file"
+  fi
+  
+  #check for "--fix-broken"
+  if echo "$errors" | grep -q "\-\-fix\-broken" || echo "$errors" | grep -q "needs to be reinstalled" ;then
+    message_to_user "APT reported a broken package, and you must fix it before Pi-Apps will work.
+
+Please run this command: sudo apt --fix-broken install"
+  fi
+  
+  #check for dpkg --configure -a
+  if echo "$errors" | grep -q "dpkg \-\-configure \-a" ;then
+    message_to_user "Before dpkg, apt, or Pi-Apps will work, dpkg needs to repair your system.
+
+Please run this command: sudo dpkg --configure -a"
+  fi
+  
+  #check for faulty dphys-swapfile package
+  if echo "$errors" | grep -q "error processing package dphys-swapfile" ;then
+    message_to_user "Before dpkg, apt, or Pi-Apps will work, dphys-swapfile must be fixed.
+
+Try Googling the above errors, or ask the Pi-Apps developers for help."
+  fi
+  
+  #check for insufficient space errors
+  if echo "$errors" | grep -q "You don't have enough free space in" ;then
+    message_to_user "Package(s) failed to install because your system has insufficient disk space.
+
+Please free up some space, then try again."
+  fi
+  
+  #check for unconfigured boot-firmware package
+  if echo "$errors" | grep -q "missing /boot/firmware, did you forget to mount it" || echo "$errors" | grep -q "u-boot-rpi" ;then
+    message_to_user "Package(s) failed to install because your boot drive is not working.
+
+You must fix the u-boot-rpi package before dpkg, apt, or Pi-Apps will work."
+  fi
+}
+
+echo "Running pkg-install..."
+if [ -z "$PKG_LIST" ];then
+  error "No package names specified to pkg-install!"
+elif [ -z "$app" ];then
+  error "No app name specified to pkg-install!"
+fi
+
+LANG=C
+LC_ALL=C
+
+source "${DIRECTORY}/api"
+apt_lock_wait
+
+#sudo apt update
+{
+echo -e "Running \e[4msudo a\e[0mp\e[4mt u\e[0mp\e[4mdate\e[0m..."
+output="$(sudo -E apt update 2>&1 | reduceapt | tee /dev/stderr)"
+exitcode=$?
+
+#inform user about autoremovable packages
+if [ ! -z "$(echo "$output" | grep 'autoremove to remove them' )" ];then
+  echo -e "\e[33mSome packages are unnecessary.\e[39m Please consider running \e[4msudo apt autoremove\e[0m."
+fi
+
+#inform user packages are upgradeable
+if [ ! -z "$(echo "$output" | grep 'packages can be upgraded' )" ];then
+  echo -e "\e[33mSome packages can be upgraded.\e[39m Please consider running \e[4msudo apt full-upgrade\e[0m."
+fi
+
+#exit on apt error
+errors="$(echo "$output" | grep '^[(W)|(E)|(Err]:')"
+if [ $exitcode != 0 ] || [ ! -z "$errors" ];then
+  echo -e "\e[91mpkg-install failed to run \e[4msudo apt update\e[0m\e[39m!"
+  echo -e "APT reported these errors:\n\e[91m$errors\e[39m"
+  
+  #run some apt error diagnosis
+  echo "$output" | apt_diagnose
+  exit 1
+fi
+}
+
+#workarounds for local debs
+{
+for package in $PKG_LIST ;do
+  
+  #if package begins with / (absolute path)
+  if [[ "$package" == /* ]];then 
+    #determine the package name from the package filepath
+    packagename="$(dpkg-deb -I "$package" | grep "^ Package:" | awk '{print $2}')"
+    [ -z "$packagename" ] && error "pkg-install: failed to determine the package name of $package"
+    
+    #change PKG_LIST to contain package name instead of package's absolute path
+    PKG_LIST="$(echo "$PKG_LIST" | sed "s|$package|$packagename|")"
+    
+    apt_lock_wait
+    echo -e "\e[97m\nInstalling local $packagename package...\e[39m"
+    #install it and reduce apt's output
+    output="$(sudo -E apt install -fy --no-install-recommends --allow-downgrades "$package" 2>&1 | reduceapt | tee /dev/stderr)"
+    if [ $? != 0 ];then
+      echo "$output" | apt_diagnose
+      error "pkg_install: While installing local packages, $package failed to install."
+    fi
+    
+    sudo -E apt-mark auto "$packagename" || error "pkg-install: failed to mark the $packagename package as autoremovable.\nlocal package path: $package"
+    
+  fi
+  
+done
+
+#now PKG_LIST shouldn't contain any absolute file paths
+if [[ "$PKG_LIST" == /* ]];then 
+  error "pkg_install: failed to remove all absolute paths from the package list!\nContents of PKG_LIST:\n$PKG_LIST"
+fi
+}
+
+#workarounds for regex (using '*')
+{
+for package in $PKG_LIST ;do
+
+  #if package contains *
+  if echo "$package" | grep -q '*' ;then 
+    
+    echo -e "\e[97m\n$package contains regex. Expanding it...\e[39m"
+    
+    list="$(apt-cache search "$package" | awk '{print $1}' | grep "$(echo "$package" | tr -d '*')" | tr '\n' ' ')"
+    
+    #change PKG_LIST to contain package name instead of package's absolute path
+    PKG_LIST="$(echo "$PKG_LIST" | sed "s|$(echo "$package" | sed 's/*/\\*/g')|$list|g")"
+    echo -e "\e[97m\npackage list is now: $PKG_LIST\e[39m"
+  fi
+done
+
+#now PKG_LIST shouldn't contain any * characters
+if echo "$PKG_LIST" | grep -q '*';then 
+  error "pkg_install: failed to remove all regex from the package list!\nContents of PKG_LIST:\n$PKG_LIST"
+fi
+}
+
+#format PKG_LIST - remove double spaces, preceding spaces, and trailing spaces.
+PKG_LIST="$(echo "$PKG_LIST" | sed 's/  / /g' | sed 's/^ //g' | sed 's/ $//g')"
+
+#create dummy deb
+{
+#create dummy apt package that depends on the packages this app requires
+echo -e "\e[97m\nCreating dummy deb...\e[39m"
+#to avoid issues with symbols and spaces in app names, we shasum the app name for use in apt
+appnamehash="$(echo "$app" | md5sum | cut -c1-8 | awk '{print $1}')"
+
+rm -rf ~/pi-apps-$appnamehash ~/pi-apps-$appnamehash.deb
+trap "rm -rf $HOME/pi-apps-$appnamehash $HOME/pi-apps-$appnamehash.deb" EXIT
+mkdir -p ~/pi-apps-$appnamehash/DEBIAN
+echo "Maintainer: Pi-Apps team
+Name: $app
+Description: Dummy package created by pi-apps to install dependencies for the '$app' app
+Version: 1.0
+Architecture: all
+Priority: optional
+Section: custom
+Depends: $(echo "$PKG_LIST" | tr -d ',' | sed 's/ /, /g')
+Package: pi-apps-$appnamehash" > ~/pi-apps-$appnamehash/DEBIAN/control
+
+output="$(dpkg-deb --build ~/pi-apps-$appnamehash 2>&1)"
+if [ $? != 0 ];then
+  echo "$output" | apt_diagnose
+  error "pkg-install: failed to create dummy deb pi-apps-$appnamehash"
+fi
+
+}
+
+#install dummy deb
+{
+#ensure dummy deb isn't already installed
+if dpkg -l pi-apps-$appnamehash &>/dev/null ;then
+  echo -e "\e[97m\nDummy deb is already installed. Uninstalling it first...\e[39m"
+  output="$(sudo -E apt purge -y pi-apps-$appnamehash 2>&1 | reduceapt | tee /dev/stderr )"
+  if [ $? != 0 ];then
+    echo "$output" | apt_diagnose
+    error "Failed to purge dummy deb (pi-apps-$appnamehash)"
+  fi
+  #sudo -E apt update &>/dev/null
+fi
+
+apt_lock_wait
+echo -e "\e[97m\nInstalling dummy deb...\e[39m"
+output="$(sudo -E apt-get install -fy --no-install-recommends --allow-downgrades ~/pi-apps-$appnamehash.deb 2>&1 | reduceapt | tee /dev/stderr )"
+rm -f ~/pi-apps-$appnamehash.deb
+rm -rf ~/pi-apps-$appnamehash
+
+echo -e "\e[97m\nApt finished.\e[39m"
+
+errors="$(echo "$output" | grep '^[(W)|(E)|(Err]:')"
+if [ ! -z "$errors" ];then
+  echo -e "\e[91mFailed to install the packages!\e[39m"
+  echo -e "APT reported these errors:\n\e[91m$errors\e[39m"
+  
+  #run some apt error diagnosis
+  echo "$output" | apt_diagnose
+  
+  exit 1
+fi
+exit 0
+}

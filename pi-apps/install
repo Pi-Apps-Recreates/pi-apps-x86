@@ -1,0 +1,130 @@
+#!/bin/bash
+
+function error {
+  echo -e "\e[91m$1\e[39m"
+  exit 1
+}
+
+cd $HOME
+
+if [[ "$(id -u)" == 0 ]]; then
+	error "Pi-Apps x86 is not designed to be installed as root! Please try again as a regular user."
+fi
+
+command -v apt >/dev/null || error "apt: command not found. Most likely this system is not running Debian."
+#Ensure running x86 processor
+if uname -m | grep -q 'arm' ;then
+  error "Pi-Apps x86 is not not supported on arm processors. Get this instead https://github.com/Botspot/pi-apps."
+fi
+
+sudo apt update || error "The command 'sudo apt update' failed. Before Pi-Apps x86 will work, you must fix your apt package-management system."
+
+#install yad automatically
+if ! command -v yad >/dev/null;then
+  sudo apt install -y yad || error "Failed to install yad."
+fi
+#remove annoying YAD icon browser launcher
+sudo rm -f /usr/share/applications/yad-icon-browser.desktop
+
+#install git
+if ! command -v git >/dev/null;then
+  sudo apt install -y git || error "Failed to install git."
+fi
+
+#install curl
+if ! command -v curl >/dev/null;then
+  sudo apt install -y curl || error "Failed to install curl."
+fi
+
+#download pi-apps if folder missing
+DIRECTORY="$(readlink -f "$(dirname "$0")")"
+if [ -z "$DIRECTORY" ] || [ "$DIRECTORY" == "$HOME" ] || [ "$DIRECTORY" == bash ];then
+  DIRECTORY="$HOME/pi-apps-x86"
+  
+  #if directory does not exist, download it
+  if [ ! -d "$DIRECTORY" ];then
+    echo "Downloading Pi-Apps x86..."
+    output="$(git clone --depth 1 https://github.com/MCRaspRBX/pi-apps-x86 "$DIRECTORY" 2>&1)"
+    if [ ! -d "$DIRECTORY" ];then
+      error "Pi-Apps-x86 download failed!\ngit clone output was: $output"
+    fi
+  fi
+fi #Past this point, DIRECTORY variable populated with valid pi-apps directory
+
+#if chromeOS, install lxterminal
+if command -v garcon-terminal-handler >/dev/null ;then
+  echo "In order to install apps on chromeOS, a working terminal emulator is required.
+Installing lxterminal in 10 seconds... (press Ctrl+C to cancel)"
+  sleep 10
+  sudo apt install -yf lxterminal || error "Failed to install lxterminal on chromeOS!"
+fi
+
+#menu button
+if [ ! -f ~/.local/share/applications/pi-apps-x86.desktop ];then
+  echo "Creating menu button..."
+fi
+mkdir -p ~/.local/share/applications
+echo "[Desktop Entry]
+Name=Pi-Apps X86
+Comment=Raspberry Pi App Store for open source projects
+Exec=${DIRECTORY}/gui
+Icon=${DIRECTORY}/icons/logo.png
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true" > ~/.local/share/applications/pi-apps-x86.desktop
+
+if [ ! -f ~/.local/share/applications/pi-apps-x86-settings.desktop ];then
+  echo "Creating Settings menu button..."
+fi
+echo "[Desktop Entry]
+Name=Pi-Apps x86 Settings
+Comment=Configure Pi-Apps x86 or create an App
+Exec=${DIRECTORY}/settings
+Icon=${DIRECTORY}/icons/logo.png
+Terminal=false
+Type=Application
+Categories=Settings;
+StartupNotify=true" > ~/.local/share/applications/pi-apps-x86-settings.desktop
+
+if [ ! -f ~/.config/autostart/pi-apps-x86-updater.desktop ];then
+  echo "Creating autostarted updater..."
+fi
+mkdir -p ~/.config/autostart
+echo "[Desktop Entry]
+Name=Pi-Apps-x86 Updater
+Exec=${DIRECTORY}/updater onboot
+Icon=${DIRECTORY}/icons/logo.png
+Terminal=false
+Type=Application
+X-GNOME-Autostart-enabled=true
+Hidden=false
+NoDisplay=false" > ~/.config/autostart/pi-apps-x86-updater.desktop
+
+mkdir -p "${DIRECTORY}/data" && cd "${DIRECTORY}/data" || error "Failed to make and enter ${DIRECTORY}/data directory!"
+mkdir -p installed-packages preload settings status update-status categories
+cd $HOME
+
+#hide template app by default
+"${DIRECTORY}/etc/categoryedit" "template" 'hidden' >/dev/null
+
+#pi-apps terminal command
+if [ ! -f /usr/local/bin/pi-apps-x86 ] || ! cat /usr/local/bin/pi-apps-x86 | grep -q "${DIRECTORY}/gui";then
+  echo "#!/bin/bash
+${DIRECTORY}/gui"' "$@"' | sudo tee /usr/local/bin/pi-apps-x86 >/dev/null
+  sudo chmod +x /usr/local/bin/pi-apps-x86
+  echo "You can now launch pi-apps x86 from a terminal, just by running 'pi-apps-x86'"
+fi
+
+if [ "$(ls "$DIRECTORY/data/settings" 2>/dev/null | wc -l)" -le 2 ];then
+  echo "Generating default settings..."
+fi
+"${DIRECTORY}/settings" refresh
+
+if [ ! -f "$DIRECTORY/data/preload/LIST-" ];then
+  echo "Preloading app list..."
+fi
+"${DIRECTORY}/preload" &>/dev/null
+
+echo "Installation complete."
+
