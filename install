@@ -122,5 +122,7 @@ if [ ! -f "$DIRECTORY/data/preload/LIST-" ];then
 fi
 "${DIRECTORY}/preload" &>/dev/null
 
+sudo chmod +x ~/pi-apps-x86/uninstall
+
 echo "Installation complete."
 
