@@ -7,4 +7,5 @@ function error {
   exit 1
 }
 
-sudo apt purge torbrowser-launcher
+rm -rf ~/tor-browser_en-US 
+rm -f /usr/share/applications/tor.desktop
