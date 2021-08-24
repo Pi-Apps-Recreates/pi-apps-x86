@@ -135,7 +135,7 @@ sudo chmod +x ~/pi-apps-x86/etc/terminal-run
 sudo chmod +x ~/pi-apps-x86/etc/bitlylink
 sudo chmod +x ~/pi-apps-x86/etc/categoryedit
 sudo chmod +x ~/pi-apps-x86/etc/logviewer
-sudo chmod +x ~/pi-apps-x86/etc/prelaod-daemon
+sudo chmod +x ~/pi-apps-x86/etc/preload-daemon
 sudo chmod +x ~/pi-apps-x86/etc/viewlog
 
 echo "Installation complete."
