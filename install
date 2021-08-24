@@ -105,9 +105,6 @@ mkdir -p "${DIRECTORY}/data" && cd "${DIRECTORY}/data" || error "Failed to make 
 mkdir -p installed-packages preload settings status update-status categories
 cd $HOME
 
-#hide template app by default
-"${DIRECTORY}/etc/categoryedit" "template" 'hidden' >/dev/null
-
 #pi-apps terminal command
 if [ ! -f /usr/local/bin/pi-apps-x86 ] || ! cat /usr/local/bin/pi-apps-x86 | grep -q "${DIRECTORY}/gui";then
   echo "#!/bin/bash
@@ -119,7 +116,6 @@ fi
 if [ "$(ls "$DIRECTORY/data/settings" 2>/dev/null | wc -l)" -le 2 ];then
   echo "Generating default settings..."
 fi
-"${DIRECTORY}/settings" refresh
 
 if [ ! -f "$DIRECTORY/data/preload/LIST-" ];then
   echo "Preloading app list..."
