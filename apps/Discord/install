@@ -7,6 +7,5 @@ function error {
   exit 1
 }
 
-
 sudo apt install snapd
 sudo snap install discord
