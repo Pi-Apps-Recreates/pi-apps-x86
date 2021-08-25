@@ -1,0 +1,6 @@
+Cross-platform source code editor with a Python application programming interface.
+It natively supports many programming languages and markup languages. Additional features can be added with plugins.
+
+To run: Menu -> Programming -> Sublime Text
+
+This runs Sublime Text v2 with the Box86 emulator.
