@@ -1,0 +1,23 @@
+#!/bin/bash
+
+DIRECTORY="$(dirname "$(dirname "$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )")")"
+
+function error {
+  echo -e "\\e[91m$1\\e[39m"
+  exit 1
+}
+
+git clone https://github.com/Botspot/wor-flasher
+
+~/wor-flasher/install-wor-gui.sh
+echo "[Desktop Entry]
+Type=Application
+Name=WoR Flasger
+GenericName=Flasher
+Comment=WoR Flasher Flash Windows To Your Raspberry Pi
+Categories=Development;Accessories;
+Exec=~/wor-flasher/install-wor-gui.sh
+Icon=~/wor-flasher/logo.png
+StartupWMClass=WoR-Flasher" > /usr/share/applications/wor-flasher.desktop
+
+exit 0
