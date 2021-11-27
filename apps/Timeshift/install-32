@@ -9,5 +9,5 @@ function error {
 
 cd $HOME/Downloads
 wget https://github.com/teejee2008/timeshift/releases/download/v20.11.1/timeshift_20.11.1_i386.deb || error 'Failed to download timeshift!'
-sudo apt install -y --fix-broken ~/Downloads/timeshift_20.11.1_i386.deb || error 'Failed to install .deb file!'
+sudo apt install -yf ~/Downloads/timeshift_20.11.1_i386.deb || error 'Failed to install .deb file!'
 rm -f timeshift_20.11.1_i386.deb

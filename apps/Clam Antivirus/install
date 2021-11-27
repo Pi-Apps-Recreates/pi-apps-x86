@@ -9,5 +9,5 @@ function error {
   exit 1
 }
 
-sudo apt install clamav && sudo apt install clamtk
+sudo apt install clamav -y && sudo apt install clamtk -y
 exit 0

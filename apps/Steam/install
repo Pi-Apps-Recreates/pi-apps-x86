@@ -15,7 +15,7 @@ fi
 echo "Downloading steam.deb"
 wget https://steamcdn-a.akamaihd.net/client/installer/steam.deb || error "Failed to download steam.deb!"
 
-sudo apt install ~/steam.deb || error "apt failed to install steam.deb!"
+sudo apt install ~/steam.deb -yf || error "apt failed to install steam.deb!"
 
 rm ~/steam.deb
 
