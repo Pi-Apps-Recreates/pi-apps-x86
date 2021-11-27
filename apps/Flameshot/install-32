@@ -7,4 +7,4 @@ function error {
   exit 1
 }
 
-sudo apt install flameshot
+sudo apt install flameshot -y

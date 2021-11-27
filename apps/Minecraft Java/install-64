@@ -8,5 +8,5 @@ function error {
 }
 
 wget https://launcher.mojang.com/download/Minecraft.deb
-sudo apt install ./Minecraft.deb
+sudo apt install -yf ./Minecraft.deb
 rm Minecraft.deb

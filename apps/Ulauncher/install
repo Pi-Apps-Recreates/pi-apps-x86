@@ -11,7 +11,7 @@ function error {
 
 wget 'https://github.com/Ulauncher/Ulauncher/releases/download/5.12.0/ulauncher_5.12.0_all.deb' -O ~/ulauncher.deb || error 'Failed to download ulauncher.deb!'
 
-sudo apt install -y --fix-missing ~/ulauncher.deb || error "APT failed to install ulauncher.deb!"
+sudo apt install -yf ~/ulauncher.deb || error "APT failed to install ulauncher.deb!"
 
 rm -f ~/ulauncher.deb
 exit 0
