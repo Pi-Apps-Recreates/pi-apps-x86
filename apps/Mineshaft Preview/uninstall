@@ -1,0 +1,10 @@
+#!/bin/bash
+
+rm -rf $HOME/Mineshaft
+echo "Removed the source directory"
+
+
+rm -rf $HOME/.local/share/applications/mineshaft2d.desktop
+
+echo "Removed shortcut"
+echo "done"
