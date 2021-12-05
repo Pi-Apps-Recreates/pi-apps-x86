@@ -1,0 +1,26 @@
+#!/bin/bash
+
+cd $HOME
+
+function error {
+  echo -e "\\e[91m$1\\e[39m"
+  exit 1
+}
+
+#use the error function often!
+#If a certain command is necessary for installation to continue, then add this to the end of it:
+# || error 'reason'
+#example below:
+git clone https://github.com/Mineshaft-game/Mineshaft || error 'Failed to clone Mineshaft repository!'
+
+cd  Mineshaft
+
+git submodule init || error "Unable to initialize submodules"
+git submodule update || error "Unable to update submodules"
+
+pip3 install -r requirements.txt || error "Unable to install requirements"
+
+
+pip3 install desktop-file || error "Unable to install desktop-file"
+
+desktop-file --exec "python3 $HOME/Mineshaft/main.py" --workpath $HOME/Mineshaft --title "Mineshaft Preview" --comment "Attempt to recreate Mineshaft in 2D"  --icon $HOME/Mineshaft/assets/blocks/grass.png $HOME/.local/share/applications/mineshaft2d.desktop || error 'Unable to create desktop shortcut'
