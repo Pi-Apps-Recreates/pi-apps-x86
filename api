@@ -10,7 +10,7 @@ if [[ "$0" == */api ]];then
   DIRECTORY="$(readlink -f "$(dirname "$0")")"
 fi
 
-repo_url="$(cat "${DIRECTORY}/etc/git_url" || echo 'https://github.com/MCRaspRBX/pi-apps-x86')"
+repo_url="$(cat "${DIRECTORY}/etc/git_url" || echo 'https://github.com/Pi-Apps-Recreates/pi-apps-x86')"
 
 #determine if host system is 64 bit arm64 or 32 bit armhf
 if [ "$(od -An -t x1 -j 4 -N 1 "$(readlink -f /sbin/init)")" = ' 02' ];then
