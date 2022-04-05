@@ -8,4 +8,5 @@ function error {
 }
 
 
-sudo apt purge balena-etcher-electron
+sudo apt purge balena-etcher-electron -y
+sudo rm /etc/apt/sources.list.d/balena-etcher.list
