@@ -10,36 +10,422 @@ function error {
   exit 1
 }
 
+if [[ $(id -u) == 0 ]]; then
+  error "pi-apps-x86 is not designed to be run as root! Please try again as a regular user."
+fi
+
 if [ -z "$1" ];then
   error "You need to specify an operation, and in most cases, which app to operate on."
 fi
 
+set -a #make all functions in the api available to apps
 source "${DIRECTORY}/api" || error "failed to source ${DIRECTORY}/api"
 
-mkdir -p "${DIRECTORY}/data/status" "${DIRECTORY}/data/update-status" "${DIRECTORY}/logs"
-#remove week-old logfiles
-find "${DIRECTORY}/logs" -type f -mtime +7 -exec rm -f {} \; &>/dev/null &
-
-#check for internet connection
-if ! wget --spider github.com &>/dev/null ;then
-  error "No internet connection!\ngithub.com failed to respond.\nErrors: $(wget --spider github.com 2>&1)"
-fi
-
-dirhash() {
-  #echo "Hashing this dir: $1" 1>&2
+validate_apps_gui() { #Given a list of actions and apps, graphically notify the user if there is a problem or ask for confirmation. Result is sent to stdout.
+  #action and app are separated by semicolon. (;)
+  #example line of input on $1: "install;Zoom"
   
-  if [ -d "$1" ];then
-    #-------- hash every file in the folder ---------------------------------------------------- list all filenames ------------------- hash all that again
-    hash="$(echo -e "$(find "$1" -type f -print0 | xargs -0 sha1sum | awk '{print $1}')$(find "$1" -type f -exec basename {} \;)" | sha1sum | awk '{print $1}')"
-  else
-    hash=''
-    #echo "dirhash(): Folder '$1' does not exist" 1>&2
-  fi
-  echo "$hash"
+  local IFS=$'\n'
+  
+  local queue="$1"
+  
+  #Ensure that the first word of each line is 'install' or 'uninstall'
+  local i=1 #track the line number in queue
+  for line in $queue ;do
+    action="$(echo "$line" | awk -F ';' '{print $1}')"
+    
+    if [ "$action" != install ] && [ "$action" != uninstall ] && [ "$action" != update ];then
+      warning "illegal mode: '$action' Removing this line from the queue"
+      
+      #remove the app from list
+      queue="$(echo "$queue" | sed ${i}d)"
+    fi
+    
+    i=$((i+1))
+  done
+  [ -z "$queue" ] && exit 0
+  
+  #Ensure that each app-name is valid
+  local i=1 #track the line number in queue
+  for line in $queue ;do
+    action="$(echo "$line" | awk -F ';' '{print $1}')"
+    app="$(echo "$line" | awk -F ';' '{print $2}')"
+    
+    if [ ! -d "${DIRECTORY}/apps/${app}" ];then
+      yad --class pi-apps-x86 --name "Pi Apps" --text="Invalid app "\""<b>$app</b>"\"". Cannot $action it." \
+        --text-align=center --center --title='Error' --window-icon="${DIRECTORY}/icons/logo.png" \
+        --button=OK!"${DIRECTORY}/icons/check.png":0
+      
+      #remove the app from list
+      queue="$(echo "$queue" | sed ${i}d)"
+    fi
+    
+    i=$((i+1))
+  done
+  [ -z "$queue" ] && exit 0
+  
+  #if trying to install an already-installed app, or trying to uninstall and already-uninstalled app, ask for confirmation
+  local i=1 #track the line number in queue
+  for line in $queue ;do
+    action="$(echo "$line" | awk -F ';' '{print $1}')"
+    app="$(echo "$line" | awk -F ';' '{print $2}')"
+    
+    if [ "$(app_status "${app}")" == "${action}ed" ];then
+      yad --class pi-apps-x86 --name "Pi Apps" --text="<b>$app</b> is already ${action}ed. Are you sure you want to $action it again?" \
+        --text-align=center --center --title='Quick question' --window-icon="${DIRECTORY}/icons/logo.png" \
+        --button=No!"${DIRECTORY}/icons/exit.png":1 --button=Yes!"${DIRECTORY}/icons/check.png":0
+      
+      if [ $? != 0 ];then
+        #user clicked No, so remove the app from list
+        queue="$(echo "$queue" | sed ${i}d)"
+      fi
+    fi
+    
+    i=$((i+1))
+  done
+  [ -z "$queue" ] && exit 0
+  
+  #Check if any apps are updatable and ask user if they really want to INSTALL an outdated version. (This is skipped if uninstalling apps)
+  
+  for line in $queue ;do
+    action="$(echo "$line" | awk -F ';' '{print $1}')"
+    app="$(echo "$line" | awk -F ';' '{print $2}')"
+    
+    if [ $action == install ];then
+      #determine the filename for the app's script to be run
+      script_name_cpu="$(script_name_cpu "$app")"
+      
+      #if the app-script doesn't match version in update folder
+      if [ -f "${DIRECTORY}/update/pi-apps-x86/apps/${app}/${script_name_cpu}" ] && ! files_match "${DIRECTORY}/update/pi-apps-x86/apps/${app}/${script_name_cpu}" "${DIRECTORY}/apps/${app}/${script_name_cpu}" ;then
+        
+        "${DIRECTORY}/updater" set-status &>/dev/null & #check for updates in background, so if user chooses "Yes", the updater will be guaranteed to have the app listed
+        
+        yad --class pi-apps-x86 --name "Pi Apps" --text="Hold up..."$'\n'"<b>$app</b>'s $script_name_cpu script does not match the online version. Either you are about to install an outdated version, or you've made changes to the script yourself."$'\n\n'"<b>Would you like to update $app</b> before installing it?" \
+          --text-align=center --center --title='Quick question' --window-icon="${DIRECTORY}/icons/logo.png" --width=400 \
+          --button="Install anyway"!"${DIRECTORY}/icons/forward.png":1 --button="Update first"!"${DIRECTORY}/icons/download.png":0
+        
+        if [ $? == 0 ];then
+          #if user clicked Yes, run the updater and avoid launching a second terminal
+          use_terminal=0 "${DIRECTORY}/updater" gui fast 1>&2
+          
+          #now that the api script was potentially updated, source it again to get new functions
+          source "${DIRECTORY}/api" || error "failed to source ${DIRECTORY}/api"
+        fi
+      fi
+    fi
+  done
+  [ -z "$queue" ] && exit 0
+  
+  echo "$queue"
 }
 
+#remove old mcpi repositories - this runonce is here so that terminal-only users will still receive the fix.
+(runonce <<"EOF"
+  if [ -f /etc/apt/sources.list.d/Alvarito050506_mcpi-devs.list ];then
+    sudo rm -f /etc/apt/sources.list.d/Alvarito050506_mcpi-devs.list
+  fi
+  if [ -f /etc/apt/sources.list.d/mcpi-revival.list ];then
+    sudo rm -f /etc/apt/sources.list.d/mcpi-revival.list
+    sudo rm -f /etc/apt/trusted.gpg.d/mcpi-revival.gpg
+  fi
+  
+  if dpkg -l box86-no-binfmt-restart &>/dev/null ;then
+    sudo apt purge -y box86-no-binfmt-restart
+    sudo apt update
+    sudo apt install -y box86
+  fi
+EOF
+) &>/dev/null
 
-if [ "$1" == 'multi-uninstall' ] || [ "$1" == 'multi-install' ];then
+#An apt repository's Packages file can be corrupted so that an apt update will silently fail. See: https://bugs.launchpad.net/ubuntu/+source/apt/+bug/1809174
+#This line will fix the problem by removing any zero-size Packages files.
+removal_list="$(find /var/lib/apt/lists -type f -name '*Packages' -size 0 2>/dev/null)"
+if [ ! -z "$removal_list" ]; then
+  if [ x$DISPLAY != x ] ; then
+    while ! sudo -n true; do
+      yad --class pi-apps-x86 --name "Pi Apps" --title="Broken Local Packages Repo Detected" --text="Please enter your user password \nso pi-apps-x86 can attempt a repair:" --image="dialog-password" --entry --hide-text 2>/dev/null | sudo -S echo "" 2>&1 >/dev/null
+    done
+  fi
+  echo "$removal_list" | xargs sudo rm -f
+fi
+
+#Silently re-download repo if github repository is over 3 months out of date
+{
+#first compare local git repo's last-commit-time with the current system time (Unix epoch time format)
+current_git_date="$(cd "$DIRECTORY"; git show -s --format=%ct)"
+current_local_date="$(date +%s)"
+if [ -z "$current_git_date" ] || [ "$current_local_date" -gt $(($current_git_date + 7776000)) ];then
+  
+  #if local git repo's last-commit-time is 3 months older than current system time, now compare the local git repo's last-commit-time with the online repo's modification time to avoid false positives.
+  #This two-tiered approach prevents unnecessary GitHub API calls and speeds up manage script's execution for normal usage.
+  
+  command -v curl >/dev/null || sudo apt install -y curl
+  upstream_git_date="$(curl https://api.github.com/repos/Botspot/pi-apps-x86/commits/master 2>&1 | grep '"date":' | tail -n 1 | sed 's/"date"://g' | xargs date +%s -d 2>/dev/null)"
+  
+  if [[ "$upstream_git_date" =~ ^[0-9]+$ ]] && ([ -z "$current_git_date" ] || [ "$upstream_git_date" -gt $(($current_git_date + 7776000)) ]);then
+    yad --class pi-apps-x86 --name "Pi Apps" --window-icon="${DIRECTORY}/icons/logo.png" --width=500 --no-buttons --center --title="Auto-updating pi-apps-x86" \
+      --text="Your pi-apps-x86 installation is somehow 3 months out-of-date."$'\n'"Reinstalling pi-apps-x86 and saving the old version to ${DIRECTORY}-3-months-old..." &
+    yadpid=$!
+    
+    clear
+    echo -e "\nYour pi-apps-x86 installation is somehow 3 months out-of-date.\nReinstalling pi-apps-x86-x86 and saving the old version to ${DIRECTORY}-3-months-old...\n\n" 1>&2
+    cd $HOME
+    rm -rf ~/pi-apps-x86-forced-update
+    command -v git >/dev/null || sudo apt install -y git
+    git clone "$(cat "${DIRECTORY}/etc/git_url")" pi-apps-x86-forced-update 1>&2 && \
+    cp -af "${DIRECTORY}/data" ~/pi-apps-x86-forced-update && \
+    cp -af "${DIRECTORY}/apps" ~/pi-apps-x86-forced-update && \
+    mv -f "$DIRECTORY" "${DIRECTORY}-3-months-old" && \
+    mv -f ~/pi-apps-x86-forced-update "$DIRECTORY"
+    sleep 10
+    
+    kill $yadpid 2>/dev/null
+    
+    #run new manage script in background
+    "${DIRECTORY}/manage" "$@"
+    
+    #run updater to update apps
+    "${DIRECTORY}/updater" gui
+    exit $?
+  fi
+fi
+}
+
+mkdir -p "${DIRECTORY}/data/status" "${DIRECTORY}/data/update-status" "${DIRECTORY}/logs"
+
+#remove week-old logfiles
+find "${DIRECTORY}/logs" -type f -mtime +6 -exec rm -f {} \; &>/dev/null &
+
+#check if hardware and OS is supported
+if is_supported_system >/dev/null;then
+  supported=yes
+else
+  supported=no
+fi
+
+if [ "$1" == 'daemon' ];then
+  #Daemon to run in the background and install/uninstall/update apps as the user makes selections
+  #This allows the user to queue up a list of actions that will run sequentially.
+  
+  #this folder will contain the runtime files necessary to make the daemon work.
+  mkdir -p "${DIRECTORY}/data/manage-daemon"
+  
+  #a list of pending steps is displayed with yad. This function adds an item to the list
+  add_to_list() { # $1 is action, $2 is app, $3 is exit code status ('0' = success), $4 is output location (usually blank, but can be 'stdout')
+    local action="$1"
+    local app="$2"
+    local status="$3"
+    
+    # $4 specifies where the output should go. Default is to send the output to the yadlist pipe, but if value is 'stdout', output to stdout.
+    local output="$4"
+    
+    if [ -f "${DIRECTORY}/apps/$app/icon-24.png" ];then
+      local icon="${DIRECTORY}/apps/$app/icon-24.png"
+    else
+      local icon="${DIRECTORY}/icons/none-24.png"
+    fi
+    
+    if [ -z "$status" ];then
+      #if there is no status number, then this action has not occured yet.
+      local content="${DIRECTORY}/icons/wait.png
+${DIRECTORY}/icons/$action.png
+Will $action
+$icon
+$app"
+    elif [ "$status" == 0 ];then
+      #if status is 0, then action completed successfully.
+      local content="${DIRECTORY}/icons/success.png
+${DIRECTORY}/icons/$action.png
+$(echo "${action^}ed" | sed 's/Updateed/Updated/g')
+$icon
+$app"
+    elif [ "$status" == 'in-progress' ];then
+      #if status is "in-progress", then action is currently being executed.
+      local content="${DIRECTORY}/icons/prompt.png
+${DIRECTORY}/icons/$action.png
+$(echo "${action^}ing..." | sed 's/Updateing/Updating/g')
+$icon
+$app"
+    else
+      #if status is 1, then action completed unsuccessfully.
+      local content="${DIRECTORY}/icons/failure.png
+${DIRECTORY}/icons/$action.png
+${action^} failed
+$icon
+$app"
+    fi
+    
+    #write the output to yadlist or stdout
+    if [ "$output" == stdout ];then
+      echo "$content"
+    else
+      echo "$content" > "${DIRECTORY}/data/manage-daemon/yadlist"
+    fi
+  }
+  
+  clear_list() { #clear the queue-viewer window
+    echo -e '\f' > "${DIRECTORY}/data/manage-daemon/yadlist"
+  }
+  
+  write_list() { #given $queue in $1, rebuild the queue-viewer window. This avoids clearing the list until the new one has been generated, so makes for a smoother experience
+    local queue="$1"
+    local output='' #variable to send to yadlist file
+    
+    local IFS=$'\n'
+    local line
+    for line in $queue ;do
+      
+      local action="$(echo "$line" | awk -F';' '{print $1}')"
+      local app="$(echo "$line" | awk -F';' '{print $2}')"
+      local code="$(echo "$line" | awk -F';' '{print $3}')"
+      
+      output+="$(add_to_list "$action" "$app" "$code" stdout)"$'\n'
+    done
+    output="${output::-1}" #remove final newline character
+    
+    clear_list
+    echo "$output" > "${DIRECTORY}/data/manage-daemon/yadlist"
+  }
+  
+  #make a named pipe so that other daemon processes can notify this master daemon process to complete new tasks
+  if [ ! -e "${DIRECTORY}/data/manage-daemon/queue" ];then
+    mkfifo "${DIRECTORY}/data/manage-daemon/queue"
+  fi
+  
+  #each line in $2 is something like "install Zoom" or "uninstall Arduino"
+  queue="$2"
+  
+  #To simplify parsing, place a ';' character between $1 (the action) and subsequent args. (the app)
+  queue="$(echo "$queue" | sed 's/^\( *[^ ]\+\) /\1;/')"
+  
+  #validate the selections first
+  queue="$(validate_apps_gui "$queue")"
+  [ -z "$queue" ] && exit 0
+  
+  #send each requested action to the queue file
+  if [ ! -z "$queue" ];then
+    echo "$queue" > "${DIRECTORY}/data/manage-daemon/queue" &
+  fi
+  
+  #only one instance of this script should ever be running at a time.
+  #Use a PID file to check if another daemon process is running.
+  if [ -f "${DIRECTORY}/data/manage-daemon/pid" ];then
+    #check if PID is running
+    if [ -e "/proc/$(cat "${DIRECTORY}/data/manage-daemon/pid")" ];then
+      echo "Sending instructions to daemon. (PID $(cat "${DIRECTORY}/data/manage-daemon/pid"))"
+      
+      #Immediately add these new actions to the gui list
+      IFS=$'\n'
+      for line in $queue ;do
+        #get first word of this line - the action. Subsequent words are the name of the app.
+        action="$(echo "$line" | awk -F ';' '{print $1}')"
+        app="$(echo "$line" | awk -F ';' '{print $2}')"
+        
+        add_to_list "$action" "$app"
+        
+      done
+      
+      #exit script - data has been sent to already-running daemon
+      exit 0
+    fi
+  fi #past this point, this instance is acting as the daemon.
+  
+  #write my own PID to the pid file
+  echo $$ > "${DIRECTORY}/data/manage-daemon/pid"
+  
+  #Display a list of actions and their current status.
+  #This list is updated with new information as time progresses.
+  #Another named pipe is created to refresh the yad list later.
+  rm -f "${DIRECTORY}/data/manage-daemon/yadlist"
+  mkfifo "${DIRECTORY}/data/manage-daemon/yadlist" #make a named pipe
+  
+  [ -z "$geometry2" ] && geometry2='--center'
+  
+  tail -f --retry "${DIRECTORY}/data/manage-daemon/yadlist" | yad --class pi-apps-x86 --name "Pi Apps" "$geometry2" --title='Monitor Progress' \
+    --list --tail --no-headers --column=:IMG --column=:IMG --column=Text --column=:IMG --column=Text --width=330 --height=200 \
+    --separator='\n' --window-icon="${DIRECTORY}/icons/logo.png" \
+    --dclick-action=true --select-action=true \
+    --no-buttons &
+  yadpid=$!
+  
+  trap "kill $yadpid 2>/dev/null" EXIT
+  
+  #Used to track which line of $queue is currently being dealt with.
+  current_line_num=1
+  
+  queue=''
+  IFS=$'\n'
+  while true;do #repeat until nothing is left in the queue
+    
+    #check for new actions to be executed
+    echo -n > "${DIRECTORY}/data/manage-daemon/queue" & #ensure that the pipe is in write mode to prevent cat from hanging
+    new_lines="$(cat "${DIRECTORY}/data/manage-daemon/queue")"
+    
+    if [ ! -z "$new_lines" ];then #if new actions have been added to the queue
+      
+      #keep track of all actions for this session with the $queue variable
+      if [ -z "$queue" ];then
+        queue="$new_lines"
+      else
+        queue+=$'\n'"$new_lines"
+      fi
+      #echo "queue is '$queue'"
+      
+      for line in $new_lines ;do
+        #echo "Now handling request: '$line'"
+        
+        #indicate current action in current line of $queue
+        queue="$(echo "$queue" | sed "${current_line_num}s/$/;in-progress/")"
+        
+        #get first word of this line - the action. Subsequent words are the name of the app.
+        action="$(echo "$line" | awk -F';' '{print $1}')"
+        app="$(echo "$line" | awk -F';' '{print $2}')"
+        
+        #Set terminal title
+        echo -ne "\e]0;${action^}ing ${app}\a"
+        
+        #refresh the list in queue-viewer window
+        write_list "$queue"
+        
+        #echo "Action is $action, app is $app"
+        
+        "${DIRECTORY}/manage" "$action" "$app"
+        exitcode=$?
+        
+        #record exit code in current line of $queue
+        queue="$(echo "$queue" | sed "${current_line_num}s/;in-progress$/;$exitcode/")"
+        
+        #one more line of $queue has been completed.
+        current_line_num=$((current_line_num+1))
+      done
+      
+      #refresh the list in queue-viewer window
+      write_list "$queue"
+      
+    else #no further items in queue, so stop the daemon
+      
+      #before exiting the loop, add a line to the queue-viewer window indicating that all items have completed.
+      echo "${DIRECTORY}/icons/none-1.png
+${DIRECTORY}/icons/none-1.png
+Done.
+${DIRECTORY}/icons/none-1.png
+" > "${DIRECTORY}/data/manage-daemon/yadlist"
+      
+      #exit loop
+      break
+    fi
+  done
+  #all actions have been completed. Daemon has effectively stopped listening, so remove its pid file
+  rm -f "${DIRECTORY}/data/manage-daemon/pid"
+  
+  #close the queue-viewer window in a few seconds
+  (sleep 5; kill $yadpid 2>/dev/null) &
+  
+  #diagnose every failed app's logfile - list item format is $action;$app;$exitcode
+  failed_apps="$(echo "$queue" | grep ';1$' | awk -F';' '{print $2}')"
+  diagnose_apps "$failed_apps"
+  
+elif [ "$1" == 'multi-uninstall' ] || [ "$1" == 'multi-install' ];then
   
   if [ "$1" == 'multi-uninstall' ];then
     action=uninstall
@@ -47,29 +433,27 @@ if [ "$1" == 'multi-uninstall' ] || [ "$1" == 'multi-install' ];then
     action=install
   fi
   
-  failed_apps=''
+  app_list="$2" #newline-separated list of apps to install/uninstall
+  
+  #check if any app names are invalid - use the validate_apps_gui function which requires the action to prefix each line. Then filter out the action afterwards.
+  app_list="$(validate_apps_gui "$(echo "$app_list" | sed "s/^/${action};/g")" | sed 's/.*;//g')"
+  [ -z "$app_list" ] && exit 0
+  
+  #install/uninstall one app at a time. If it fails then add the app to the list of failed apps
   IFS=$'\n'
-  for app in $2
-  do
+  failed_apps=''
+  for app in $app_list ;do
+    
+    #Set terminal title
+    echo -ne "\e]0;${action^}ing ${app}\a"
+    
     "${DIRECTORY}/manage" $action "$app"
     if [ $? != 0 ];then
       #this app failed to install - add it to the list of failed apps
-      failed_apps="$failed_apps
-$app"
+      failed_apps+="$app"$'\n'
     fi
   done
-  app_results="${app_results:1}" #remove first blank newline
   
-  if [ "$supported" == yes ];then #if hardware and OS is supported
-    for app in $(echo "$failed_apps" | list_intersect "$(list_apps online)") ;do
-      logfile="$(ls -dt "${DIRECTORY}/logs"/* | grep '\-'"${app}"'\.log' -m 1)" #sort logfiles by modification date, get the most recent one for the current app
-      
-      #if logfile detected, exists, and is not empty, ask permission to send error report
-      if [ ! -z "$logfile" ] && [ -f "$logfile" ] && [ -s "$logfile" ];then
-        send_error_report_gui "$logfile" "<b>$app</b> failed to ${action}."
-      fi
-    done
-  fi
   if [ ! -z "$failed_apps" ];then
     exit 1
   fi
@@ -92,38 +476,37 @@ elif [ "$1" == 'install' ] || [ "$1" == 'uninstall' ];then
   fi
   
   if [ "$1" == install ];then
-    mode=install
+    action=install
   else
-    mode=uninstall
+    action=uninstall
+  fi
+  
+  if [ "$action" == install ];then
+    #check for internet connection
+    errors="$(command wget --spider https://github.com 2>&1)"
+    if [ $? != 0 ];then
+      error "No internet connection! (github.com failed to respond)\nErrors:\n$errors"
+    fi
   fi
   
   #ensure not a disabled app
-  if [ "$mode" == install ] && [ "$(app_status "${app}")" == 'disabled' ];then
-    echo -e "\e[93mNot installing the $app app. IT IS DISABLED.\e[39m"
+  if [ "$action" == install ] && [ "$(app_status "${app}")" == 'disabled' ];then
+    warning "Not installing the $app app. IT IS DISABLED."
     exit 0
   fi
   
-  #if already installed then ask for confirmation
-  if [ "$(app_status "${app}")" == "${mode}ed" ];then
-    yad --text="$app is already ${mode}ed. Are you sure you want to $mode it again?" \
-    --text-align=center --center --title='Quick question' --window-icon="${DIRECTORY}/icons/logo.png" \
-    --button=No!"${DIRECTORY}/icons/exit.png":1 --button=Yes!"${DIRECTORY}/icons/check.png":0 || exit 0
+  #display warning if hardware and os is unsupported
+  if [ "$supported" == no ];then
+    warning "YOUR SYSTEM IS UNSUPPORTED:\n$(is_supported_system)"
+    sleep 1
+    echo -e "\e[103m\e[30mThe ability to send error reports has been disabled.\e[39m\e[49m"
+    sleep 1
+    echo -e "\e[103m\e[30mWaiting 10 seconds... (To cancel, press Ctrl+C or close this terminal)\e[39m\e[49m"
+    sleep 10
   fi
   
-  #analytics
-  "${DIRECTORY}/etc/bitlylink" "$app" "$mode" &
-  
-  #determine which script to run
-  if [ "$mode" == install ];then
-    scriptname="$(script_name_cpu "$app")" #will be install, install-32, or install-64
-    [ -z "$scriptname" ] && error "It appears $app does not have an install-${arch} script suitable for your ${arch}-bit OS."
-  else #uninstall mode
-    scriptname=uninstall
-  fi
-  appscript="${DIRECTORY}/apps/${app}/${scriptname}"
-    
   #determine path for log file to be created
-  logfile="${DIRECTORY}/logs/${mode}-incomplete-${app}.log"
+  logfile="${DIRECTORY}/logs/${action}-incomplete-${app}.log"
   if [ -f "$logfile" ] || [ -f "$(echo "$logfile" | sed 's+-incomplete-+-success-+g')" ] || [ -f "$(echo "$logfile" | sed 's+-incomplete-+-fail-+g')" ];then
     #append a number to logfile's file-extension if the original filename already exists
     i=1
@@ -137,160 +520,143 @@ elif [ "$1" == 'install' ] || [ "$1" == 'uninstall' ];then
       i=$((i+1))
     done
   fi
-  #for piping to tee, the app script's exit code is preserved by enabling the pipefail bash builtin
-  set -o pipefail
   
-  chmod u+x "$appscript"
-  
-  echo -e "\e[96m${mode^}ing \e[1m${app}\e[0m\e[96m...\e[39m" | tee -a "$logfile"
-  cd $HOME
-  echo 'corrupted' > "${DIRECTORY}/data/status/${app}"
-  nice "$appscript" &> >(tee -a "$logfile")
-  if [ $? == 0 ]; then #if app script succeeded
-    #change the status from corrupted to 'installed' or 'uninstalled'
-    echo "${mode}ed" > "${DIRECTORY}/data/status/${app}"
-    echo -e "\n\e[42m\e[30m${mode^}ed ${app} successfully.\e[39m\e[49m" | tee -a "$logfile"
-    
-    format_log_file "$logfile" #remove escape sequences from logfile
-    mv "$logfile" "$(echo "$logfile" | sed 's+-incomplete-+-success-+g')" #
-    exit 0
+  #if this app has scripts, determine which script to run
+  if [ "$(app_type "$app")" == standard ];then
+    if [ "$action" == install ];then
+      scriptname="$(script_name_cpu "$app")" #will be install, install-32, or install-64
+      [ -z "$scriptname" ] && error "It appears $app does not have an install-${arch} script suitable for your ${arch}-bit OS."
+    else #uninstall mode
+      scriptname=uninstall
+    fi
+    appscript=("${DIRECTORY}/apps/${app}/${scriptname}")
+    chmod u+x "$appscript" &>/dev/null
+  #if this app just lists a package-name, set the appscript to install that package
   else
-    echo -e "\n\e[91mFailed to ${mode} ${app} with $scriptname script"\!"\e[39m
-\e[40m\e[93m\e[5m▲\e[25m\e[39m \e[49m\e[93mNeed help? Copy the \e[1mENTIRE\e[0m\e[49m\e[93m terminal output or take a screenshot.
-Please ask on Github: \e[94m\e[4mhttps://github.com/MCRaspRBX/pi-apps-x86/issues/new/choose\e[24m\e[93m
-Or on Discord: \e[94m\e[4mhttps://discord.gg/RXSTvaUvuu\e[24m\e[39m" | tee -a "$logfile"
-    
-    format_log_file "$logfile" #remove escape sequences from logfile
-    mv "$logfile" "$(echo "$logfile" | sed 's+-incomplete-+-fail-+g')"
-    exit 1
+    appscript=(bash -c -o pipefail "apt_lock_wait ; sudo -E apt $(echo "$action" | sed 's/uninstall/purge --autoremove/g') -yf $(cat "${DIRECTORY}/apps/$app/packages") 2>&1 | less_apt")
   fi
   
-elif [ "$1" == 'update' ];then
-  #UPDATE
-  #for this operation, a program name must be specified.
+  #print to terminal
+  status "${action^}ing \e[1m${app}\e[0m\e[96m..." | tee -a "$logfile"
+  echo
+  cd $HOME
+  if [ "$3" == "update" ]; then
+    script_input="update"
+  else
+    script_input=""
+  fi
+  nice "${appscript[@]}" "$script_input" &> >(tee -a "$logfile")
+  exitcode="${PIPESTATUS[0]}"
+  
+  #if app succeeded
+  if [ $exitcode == 0 ];then
+    
+    #Contribute to app install/uninstall count as long as parent processes is NOT updater (during an app-reinstall)
+    #See: https://askubuntu.com/a/1012236
+    if [ "$(cat /proc/$PPID/comm)" != "updater" ] && [ "$3" != "update" ];then
+      shlink_link "$app" "$action" &
+    fi
+    
+    status_green "\n${action^}ed ${app} successfully." | tee -a "$logfile"
+    echo "${action}ed" > "${DIRECTORY}/data/status/${app}"
+    
+    format_logfile "$logfile" #remove escape sequences from logfile
+    mv "$logfile" "$(echo "$logfile" | sed 's+-incomplete-+-success-+g')" #rename logfile to indicate it was successful
+    
+  else #if app failed to install/uninstall
+
+    #remove dummy deb if app failed to install (to avoid dummy debs being left on a users install for broken apps)
+    package_name="$(app_to_pkgname "$app")"
+    if [[ ${action} == "install" ]] && [[ "$(app_type "$app")" == standard ]] && package_installed "$package_name"; then
+      if [[ "$script_input" == "update" ]]; then
+        #if install failed as part of an update, don't autoremove the packages, only purge the dummy deb
+        output="$(sudo -E apt purge -y $package_name 2>&1 | less_apt | tee /dev/stderr)"
+        if [ $? != 0 ];then
+          echo "$output" | tee -a "$logfile"
+          warning "Failed to purge dummy deb ($package_name)" 2>&1 | tee -a "$logfile"
+        else
+          echo "$output" | tee -a "$logfile"
+        fi
+        unset output
+      else
+        #install and not update failed, run purge_packages
+        echo "Running purge_packages..." >> "$logfile"
+        purge_packages >> "$logfile"
+      fi
+    fi
+    unset package_name
+
+    echo -e "\n\e[91mFailed to ${action} ${app}!\e[39m
+\e[40m\e[93m\e[5m◢◣\e[25m\e[39m\e[49m\e[93mNeed help? Copy the \e[1mENTIRE\e[0m\e[49m\e[93m terminal output or take a screenshot.
+Please ask on Github: \e[94m\e[4mhttps://github.com/Botspot/pi-apps-x86/issues/new/choose\e[24m\e[93m
+Or on Discord: \e[94m\e[4mhttps://discord.gg/RXSTvaUvuu\e[0m" | tee -a "$logfile"
+    
+    #set the app's status to 'corrupted' if the diagnostics determine the error is NOT internet or system or package, AND if the app is a script-type app
+    if ! [[ "$(log_diagnose "$logfile" | head -n1)" =~ ^(system|internet|package)$ ]] && [ "$(app_type "$app")" == standard ];then
+      echo "corrupted" > "${DIRECTORY}/data/status/${app}"
+    fi
+    
+    format_logfile "$logfile" #remove escape sequences from logfile
+    mv "$logfile" "$(echo "$logfile" | sed 's+-incomplete-+-fail-+g')" #rename logfile to indicate it was unsuccessful
+  fi
+ 
+  #if the app is a package, set its status to whatever dpkg thinks it is
+  if [ "$(app_type "$app")" == package ];then
+    refresh_pkgapp_status "$app"
+  fi
+  
+  #exit the manage script with the same exit-code of the app's script
+  exit $exitcode
+  
+elif [ "$1" == 'update' ];then #The manage script no longer handles updates. This mode is only for backwards-compatibility and uses the updater script
+  
+  warning "The manage script ONLY updates apps, and this mode has been replaced by the updater script.
+If you want to update pi-apps-x86 from the command-line, please use:
+~/pi-apps-x86/updater cli-yes"
+  
   app="$2"
   if [ -z "$app" ];then
     error "For this operation, you must specify which app to operate on."
+  elif [ ! -d "${DIRECTORY}/apps/$app" ];then
+    error "${DIRECTORY}/apps/$app does not exist!"
   fi
   
-  #HIDDEN FEATURE - if $3 equals nofetch, then don't download github repo. Useful for updating multiple apps at maximum speed
-  if [ "$3" == 'nofetch' ] && [ -d "${DIRECTORY}/update" ];then
-    true
-  else
-    rm -rf "${DIRECTORY}/update" && mkdir "${DIRECTORY}/update" && cd "${DIRECTORY}/update" || error "failed to enter the update directory!"
-    git clone --depth=1 "$(cat "${DIRECTORY}/etc/git_url")" || error "failed to clone repository!"
-  fi
+  #get functions from updater script
+  source "${DIRECTORY}/updater" source
   
-  newhash="$(dirhash "${DIRECTORY}/apps/${app}")"
-  oldhash="$(dirhash "${DIRECTORY}/apps/${app}")"
+  check_repo
+  updatable_apps="$2"
+  updatable_files=''
   
-  #detect which installation script exists and get the hash for that one
-  scriptname="$(script_name_cpu "$app")"
-  [ $? == 1 ] && exit 1
+  update_now_cli
   
-  newinstallhash="$(sha1sum "${DIRECTORY}/update/pi-apps-x86/apps/${app}/${scriptname}" 2>/dev/null | awk '{print $1}')"
-  oldinstallhash="$(sha1sum "${DIRECTORY}/apps/${app}/${scriptname}" 2>/dev/null | awk '{print $1}')"
+elif [ "$1" == 'check-all' ];then #The manage script no longer handles updates. This mode is only for backwards-compatibility and uses the updater script
   
-  #echo -e "newinstallhash: $newinstallhash\noldinstallhash: $oldinstallhash"
-  #echo -e "newhash: $newhash\noldhash: $oldhash"
+  warning "The manage script ONLY updates apps, and this mode has been replaced by the updater script.
+If you want to update pi-apps-x86 from the command-line, please use:
+~/pi-apps-x86/updater cli-yes"
   
-  if [ "$newhash" == "$oldhash" ];then
-    echo "$app is identical to the online version. Nothing to do!"
-    exit 0
-  fi
-  #else
-  echo "$app is not identical to the online version."
-  installback=no
+  #get functions from updater script
+  source "${DIRECTORY}/updater" source
   
-  #if install script was changed                                                    #if installed already
-  if [ "$newinstallhash" != "$oldinstallhash" ] && [ "$(app_status "${app}")" == 'installed' ];then
-    installback=yes
-    echo "$app's install script has been updated. Reinstalling $app..."
-    #uninstall it using a recursive script instance
-    "${DIRECTORY}/manage" uninstall "$app"
-    
-    #fix edge case: if app is installed but uninstall script doesn't exist somehow, then pretend app was uninstalled so that the reinstall later will happen noninteractively
-    if [ "$(app_status "$app")" == installed ];then
-      echo 'uninstalled' > "${DIRECTORY}/data/status/${app}"
-    fi
-  fi
+  check_repo
+  get_updatable_apps
   
-  #move old program to trash
-  gio trash "${DIRECTORY}/apps/${app}" 2>/dev/null
-  #failsafe
-  [ -d "${DIRECTORY}/apps/${app}" ] && rm -rf "${DIRECTORY}/apps/${app}"
+elif [ "$1" == 'update-all' ];then #The manage script no longer handles updates. This mode is only for backwards-compatibility and uses the updater script
   
-  if [ "$installback" == 'yes' ];then
-    echo "$app was originally installed before updating. Reinstalling the new version now."
-    #install it using a recursive script instance
-    "${DIRECTORY}/manage" install "$app"
-  fi
-  echo -e "\e[92m${app} was updated successfully.\e[39m"
+  warning "The manage script ONLY updates apps, and this mode has been replaced by the updater script.
+If you want to update pi-apps-x86 from the command-line, please use:
+~/pi-apps-x86/updater cli-yes"
   
-elif [ "$1" == 'check-all' ];then
-  #CHECK-ALL
-  #for this operation, a program name cannot be specified.
+  #get functions from updater script
+  source "${DIRECTORY}/updater" source
   
-  #hidden flags
-  installedonly=0
-  if [ "$2" == 'installedonly' ];then
-    # If $2 is 'installedonly', then only check for updates for those apps that are installed
-    installedonly=1
-    
-  elif [ "$2" == 'nogenerate' ];then
-    # If $2 is 'nogenerate', then don't hash anything or git-clone anything. Simply reads out data found in data/update-status folder in the same app-per-newline format.
-    echo -e "\e[97mThese apps can be updated:" 1>&2
-    echo "${updatable}"
-    IFS=$'\n'
-    for app in $(list_apps all);do
-      
-      updatestatus="$(cat "${DIRECTORY}/data/update-status/${app}" 2>/dev/null)"
-      if [ "$updatestatus" == 'new' ] || [ "$updatestatus" == 'updatable' ];then
-        #if current app's update-status is 'new' or 'updatable', then echo it.
-        echo "$app"
-      fi
-      
-    done
-   exit 0 #the lines above have displayed a list of apps already.
-   
-  fi #end of checking for hidden flags
-
+  check_repo
+  updatable_apps="$(get_updatable_apps)"
+  updatable_files=''
   
-  if [ $installedonly == 1 ];then
-    #installedonly flag enabled. Remove apps that are uninstalled, disabled, or corrupted
-    applist="$(list_apps installed)"
-  else
-    #installedonly flag disabled, so use entire combined list of apps, both local and online
-    applist="$(list_apps all)"
-  fi
+  update_now_cli
   
-  #echo "App list: $applist" 1>&2
-  
-  #remove initial newline character
-  updatable="${updatable:1}"
-  
-  if [ -z "$updatable" ];then
-    updatable='.'
-  fi
-  
-  echo "${updatable}"
-elif [ "$1" == 'update-all' ];then
-  #UPDATE-ALL
-  #for this operation, a program name cannot be specified.
-  IFS=$'\n'
-  updatable="$("${DIRECTORY}/manage" check-all)"
-  if [ "$updatable" == '.' ];then
-    updatable=''
-  fi
-  echo "Updatable: ${updatable}EOU"
-  for updateapp in $updatable
-  do
-    echo "updating $updateapp"
-    #update it using a recursive script instance
-    echo "${DIRECTORY}/manage update $updateapp"
-    "${DIRECTORY}/manage" update "$updateapp" || exit 1
-  done
-  echo -e '\e[92mOperation completed successfully!\e[39m'
 else
-  error "Did not understand $1. Allowed values: 'install', 'multi-install', 'install-if-not-installed', 'uninstall', 'multi-uninstall', 'update','update-all', or 'check-all'."
+  error "Invalid mode. ($1) Allowed values: 'install', 'multi-install', 'install-if-not-installed', 'uninstall', 'multi-uninstall', 'update', 'update-all', 'check-all', or 'daemon'."
 fi
