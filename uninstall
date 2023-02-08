@@ -8,7 +8,7 @@ function error {
 DIRECTORY="$(readlink -f "$(dirname "$0")")"
 
 if [ -z "$(dpkg-query -W --showformat='${Status}\n' yad 2>/dev/null | grep "install ok installed")" ];then
-  zenity --title='Pi-Apps' --window-icon="${DIRECTORY}/icons/logo.png" \
+  zenity --title='Pi-Apps-x86' --window-icon="${DIRECTORY}/icons/logo.png" \
 	  --list --text="Do you want to uninstall YAD?" \
 	  --ok-label=Yes --cancel-label=No \
 	  --column=foo --hide-header 2>/dev/null && "${DIRECTORY}/etc/terminal-run" "sudo apt purge -y yad;echo -e '\nClosing in 5 seconds.';sleep 5" "Uninstalling YAD"
@@ -23,7 +23,6 @@ rm -f ~/Desktop/pi-apps-x86.desktop
 echo "Removing terminal command..."
 sudo rm -f /usr/local/bin/pi-apps-x86
 
-echo -e "\e[32mUninstallation complete.\e[97m Only $HOME/pi-apps still remains.
-If Pi-apps didn"\'"t work for you, \e[4m\e[21m\e[5mPLEASE\e[0m\e[97m consider submitting a \e[1mbug report\e[0m!
---> \e[96mhttps://github.com/Botspot/pi-apps/issues/new\e[39m"
-
+echo -e "\e[32mUninstallation complete.\e[97m Only $HOME/pi-apps-x86 still remains.
+If pi-apps-x86 didn"\'"t work for you, \e[4m\e[21m\e[5mPLEASE\e[0m\e[97m consider submitting a \e[1mbug report\e[0m!
+--> \e[96mhttps://github.com/Pi-Apps-Recreates/pi-apps-x86/issues/new\e[39m"
