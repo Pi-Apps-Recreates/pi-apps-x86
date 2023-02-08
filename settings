@@ -1,6 +1,8 @@
 #!/bin/bash
 DIRECTORY="$(readlink -f "$(dirname "$0")")"
 
+source "${DIRECTORY}/api" || error "failed to source ${DIRECTORY}/api"
+
 function error {
   echo -e "\e[91m$1\e[39m"
   exit 1
@@ -43,16 +45,18 @@ elif [ "$1" == 'revert' ];then #If $1 equals 'revert', then overwrite all settin
   exit 0
 fi
 
-if [ ! -f ~/.local/share/applications/pi-apps-settings.desktop ];then
+if [ ! -f ~/.local/share/applications/pi-apps-x86-settings.desktop ];then
   echo "Creating Settings menu button"
   echo "[Desktop Entry]
 Name=Pi Apps Settings
-Comment=Configure Pi-Apps or create an App
+Comment=Configure pi-apps-x86-x86-x86 or create an App
 Exec=${DIRECTORY}/settings
-Icon=${DIRECTORY}/icons/logo.png
+Icon=${DIRECTORY}/icons/settings.png
 Terminal=false
+StartupWMClass=pi-apps-x86-x86-Settings
 Type=Application
-Categories=Settings;" > ~/.local/share/applications/pi-apps-settings.desktop
+Categories=Settings;
+StartupNotify=true" > ~/.local/share/applications/pi-apps-x86-settings.desktop
   
 fi
 
@@ -64,8 +68,59 @@ while [ -z $exitloop ];do
   tooltips=()
   PREIFS="$IFS"
   IFS='|'
+
+  # generate yad/xlunch themes based on system installed themes
+  # yad is compiled using gtk3 on all distros so only gtk3 themes are valid
+
+  theme_dirs=( /usr/share/themes ~/.local/share/themes ~/.themes )
+  # begin array with yad default theme
+  declare gtk3_themes=("default")
+                      
+  for td in "${theme_dirs[@]}"; do
+    for th in "$td"/*; do
+      [[ -d "$th" ]] || continue
+      thname=${th##*/}
+      [ $(ls "$th/gtk-3."* 2>/dev/null | wc -l ) -gt 0 ] && gtk3_themes+=("$thname")
+    done
+  done
+  gtk3_themes=( "${gtk3_themes[@]/#/yad-}" )
+  # add xlunch preset themes to the array
+  gtk3_themes+=( "xlunch-dark" )
+  gtk3_themes+=( "xlunch-dark-3d" )
+  gtk3_themes+=( "xlunch-light-3d" )
+  params=$( IFS=$'\n'; echo "${gtk3_themes[*]}" )
+  unset gtk3_themes
+
+  name="App List Style"
+  
+  #create file if necessary
+  if [ ! -f "${DIRECTORY}/data/settings/${name}" ] || [ -z "$(cat "${DIRECTORY}/data/settings/${name}")" ];then
+    cat "${DIRECTORY}/etc/setting-params/${name}" | grep -v '#' | head -n1 > "${DIRECTORY}/data/settings/${name}"
+  fi
+  #get current setting
+  curval="$(cat "${DIRECTORY}/data/settings/${name}")"
+  
+  #order params, with selected option first
+  params="$(echo "$params" | grep -x "$curval")
+$(echo "$params" | grep -vx "$curval")"
+  
+  # remove blank lines (like if the current selected option no longer exists) and format as one line output separated by !
+  params="$(echo "$params" | awk NF | tr '\n' '!')"
+  params="${params::-1}"
+  
+  tooltip="pi-apps-x86-x86 can display the apps as a compact list (yad), or as a group of larger icons. (xlunch)"
+  
+  yadparams+=(--field=:CB "${params}")
+  tooltips+=(--field="${name}":!!"${tooltip}":BTN '')
+
+  unset name
+  unset tooltip
+  unset params
+  unset curval
+  
   for name in $settings
   do
+    [ "${name}" == "App List Style" ] && continue
     params="$(cat "${DIRECTORY}/etc/setting-params/${name}" | grep -v '#')"
     
     #create file if necessary
@@ -92,13 +147,16 @@ $(echo "$params" | grep -vx "$curval")"
   done
   IFS="$PREIFS"
   
-  output="$(yad --center --title='Pi-Apps Settings' --width=310 --height=300 \
-    --form --separator='\n' --window-icon="${DIRECTORY}/icons/logo.png" --columns=2 \
+  output="$(yad --class pi-apps-x86-x86-Settings --name "Pi Apps Settings" --center --title='pi-apps-x86-x86 Settings' --width=310 --height=300 \
+    --form --separator='\n' --window-icon="${DIRECTORY}/icons/settings.png" --columns=2 \
     "${tooltips[@]}" \
-    --field='Categories...'!"${DIRECTORY}/icons/categories.png":FBTN "bash -c '${DIRECTORY}/etc/categoryedit &>/dev/null'" \
-    --field='Log files...'!"${DIRECTORY}/icons/log-file.png":FBTN "bash -c '${DIRECTORY}/etc/logviewer &>/dev/null'" \
+    --field='Categories'!"${DIRECTORY}/icons/categories.png"!"Does an App belong in Editors instead of Tools? This lets you move it.":FBTN "bash -c '${DIRECTORY}/etc/categoryedit 1>&2'" \
+    --field='Log files'!"${DIRECTORY}/icons/log-file.png"!"View past installation logs. Useful for debugging, or to see what you installed yesterday.":FBTN "bash -c '${DIRECTORY}/etc/logviewer 1>&2'" \
+    --field='Multi-Install'!"${DIRECTORY}/icons/multi-select.png"!"Install multiple apps at the same time.":FBTN "bash -c '${DIRECTORY}/api multi_install_gui 1>&2'" \
     "${yadparams[@]}" \
-    --field='New App...'!"${DIRECTORY}/icons/create.png":FBTN "bash -c '${DIRECTORY}/createapp &>/dev/null'" \
+    --field='New App'!"${DIRECTORY}/icons/create.png"!"Make your own app! It's pretty easy if you follow the instructions.":FBTN "bash -c '${DIRECTORY}/createapp 1>&2'" \
+    --field='Import App'!"${DIRECTORY}/icons/categories/Imported.png"!"Did someone else make an app but it's not on pi-apps-x86-x86 yet? Import it here.":FBTN "bash -c '${DIRECTORY}/etc/import-app 1>&2'" \
+    --field='Multi-Uninstall'!"${DIRECTORY}/icons/multi-select.png"!"Uninstall multiple apps at the same time.":FBTN "bash -c '${DIRECTORY}/api multi_uninstall_gui 1>&2'" \
     --button='Reset'!"${DIRECTORY}/icons/backup.png"!'Reset all settings to their defaults':2 \
     --button=Cancel!"${DIRECTORY}/icons/exit.png":1 \
     --button=Save!"${DIRECTORY}/icons/check.png":0 \
@@ -137,7 +195,4 @@ do
   settingnumber=$((settingnumber + 1))
 done
 IFS="$PREIFS"
-
-
-
 
