@@ -2,7 +2,9 @@
 
 Pi-Apps For X86 linux distros
 
-## To install Pi-Apps-x86
+## To install Pi-Apps-x86:
 ```bash
-wget -qO- https://raw.githubusercontent.com/Pi-Apps-Recreates/pi-apps-x86/master/install | bash
+git clone https://github.com/Pi-Apps-Recreates/pi-apps-x86
+cd pi-apps-x86
+bash install
 ```
